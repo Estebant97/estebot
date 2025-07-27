@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -49,7 +48,7 @@ func ListFiles(input json.RawMessage) (string, error) {
 	err := json.Unmarshal(input, &listFilesInput)
 
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("failed to parse input: %w", err)
 	}
 
 	dir := "."
@@ -93,7 +92,7 @@ func ReadFile(input json.RawMessage) (string, error) {
 	readFileInput := ReadFileInput{}
 	err := json.Unmarshal(input, &readFileInput)
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("failed to parse input: %w", err)
 	}
 
 	content, err := os.ReadFile(readFileInput.Path)
@@ -117,7 +116,7 @@ func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
 }
 
 func createNewFile(filePath, content string) (string, error) {
-	dir := path.Dir(filePath)
+	dir := filepath.Dir(filePath)
 	if dir != "." {
 		err := os.MkdirAll(dir, 0755)
 		if err != nil {
@@ -153,7 +152,12 @@ func EditFile(input json.RawMessage) (string, error) {
 	}
 
 	oldContent := string(content)
-	newContent := strings.Replace(oldContent, editFileInput.OldStr, editFileInput.NewStr, -1)
+	// Count occurrences to ensure there's exactly one match
+	if editFileInput.OldStr != "" && strings.Count(oldContent, editFileInput.OldStr) != 1 {
+		return "", fmt.Errorf("old_str must have exactly one match in the file")
+	}
+
+	newContent := strings.Replace(oldContent, editFileInput.OldStr, editFileInput.NewStr, 1)
 
 	if oldContent == newContent && editFileInput.OldStr != "" {
 		return "", fmt.Errorf("old_str not found in file")
@@ -303,6 +307,12 @@ If the file specified with path doesn't exist, it will be created.
 }
 
 func main() {
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		fmt.Println("Error: ANTHROPIC_API_KEY environment variable is not set")
+		os.Exit(1)
+	}
+
 	client := anthropic.NewClient()
 
 	scanner := bufio.NewScanner(os.Stdin)
